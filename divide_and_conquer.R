@@ -81,6 +81,48 @@ if(use_stan){
 }
 
 # Divide and Conquer
+if(use_stan){
+	infer_batch <- function(obs){
+alpha_prior <- 15
+beta_prior <- 20
+root <- 3
+observed <- list(x=sum(obs),n=length(obs),k=root,a_prior=alpha_prior,b_prior=beta_prior)
+stan_model_code <-'
+functions{
+				real beta_root_lpdf(real th, real a, real b,real k){
+					return beta_lpdf(th|a,b)/k;
+				}
+}
+
+data{
+				int<lower=1> k;
+				int<lower=0> x;
+				int<lower=0> n;
+				int<lower=0> a_prior;
+				int<lower=0> b_prior;
+}
+
+parameters{
+				//real<lower=0,upper=1> theta_prior;
+				real<lower=0,upper=1> theta;
+}
+
+model{
+				//theta_prior ~ beta_root(a_prior,b_prior,k);
+				theta ~ beta_root(a_prior,b_prior,k);
+				x ~ binomial(n,theta);
+}
+'
+stan_model <- stan_model(model_code=stan_model_code)
+fit <- sampling(stan_model,data=observed,iter=50000,chains=4,seed=123)
+nds <- extract(fit)
+return(nds)
+	} # End of infer_batch()
+
+
+}
+
+if(use_jags){
 infer_batch <- function(obs){
 	n_obs <- length(obs)
 	observed <- list('obs','n_obs')
@@ -152,6 +194,8 @@ for(sh in 1:(length(shards)-1)){
 #posterior <- consensusMCindep(subarray)
 #posterior <- consensusMCcov(subarray)
 posterior <- semiparamDPE(subarray)
+
+} # End of use_jags
 
 # Plotting
 try(dev.off())

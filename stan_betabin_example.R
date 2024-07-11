@@ -1,9 +1,9 @@
 rm(list=ls())
 library('rstan')
 full <- rbinom(n=10,size=1,prob=0.3)
-alpha_prior <- 5
-beta_prior <- 2
-root <- 2
+alpha_prior <- 15
+beta_prior <- 20
+root <- 3
 observed <- list(x=sum(full),n=length(full),k=root,a_prior=alpha_prior,b_prior=beta_prior)
 stan_model_code <-'
 functions{
@@ -32,7 +32,7 @@ model{
 }
 '
 stan_model <- stan_model(model_code=stan_model_code)
-fit <- sampling(stan_model,data=observed,iter=2000,chains=4,seed=123)
+fit <- sampling(stan_model,data=observed,iter=50000,chains=4,seed=123)
 nds <- extract(fit)
 
 
