@@ -1,5 +1,7 @@
-rm(list=ls())
+rm(list=ls()[!ls()%in%c('stan_model_full','stan_model_divided')])
 library('rstan')
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
 set.seed(1)
 
 
@@ -11,11 +13,12 @@ for(i in 1:length(th)){
 	full <- append(full,
 						rbinom(n=n_by_batch,prob=th[i],size=1))
 }
+full <- 1-full
 #full <- rbinom(n=900,prob=.35,size=1)
 n_obs <- length(full)
 
 # Prior hyperparam
-alpha_prior <- 15
+alpha_prior <- 2
 beta_prior <- 20
 
 # Closed-form solution (full data)
@@ -50,19 +53,28 @@ model{
 	x ~ binomial(n,theta);
 }
 '
-stan_model <- stan_model(model_code=stan_model_code)
-fit <- sampling(stan_model,data=observed,iter=1000,chains=3,seed=123)
+if(!exists('stan_model_full')){
+	stan_model_full <- stan_model(model_code=stan_model_code)
+}
+
+fit <- sampling(stan_model_full,data=observed,iter=1000,chains=3,seed=123)
 nds <- extract(fit)
 
 
 # Divide and Conquer
 n_batches <- 10
 
-infer_batch <- function(obs){
+infer_batch <- function(obs,stan_model){
 #	alpha_prior <- 15
 #	beta_prior <- 20
 	root <- n_batches
 	observed <- list(x=sum(obs),n=length(obs),k=root,a_prior=alpha_prior,b_prior=beta_prior)
+	fit <- sampling(stan_model,data=observed,iter=1000,chains=3,seed=123)
+	nds <- extract(fit)
+	return(nds)	
+} # End of infer_batch()
+
+
 	stan_model_code <-'
 	functions{
 					real beta_root_lpdf(real th, real a, real b,real k){
@@ -89,13 +101,9 @@ infer_batch <- function(obs){
 					x ~ binomial(n,theta);
 	}
 	'
-	stan_model <- stan_model(model_code=stan_model_code)
-	fit <- sampling(stan_model,data=observed,iter=1000,chains=3,seed=123)
-	nds <- extract(fit)
-	return(nds)	
-} # End of infer_batch()
-
-
+if(!exists('stan_model_divided')){
+	stan_model_divided <- stan_model(model_code=stan_model_code)
+}
 shards <- vector(mode='list',length=n_batches)
 for(b in 1:n_batches){
 	#shards[[b]]$indices <- seq(1,10)+10*(b-1)
@@ -103,7 +111,7 @@ for(b in 1:n_batches){
 	shards[[b]]$indices <- seq(1,length(full)/n_batches)+length(full)/n_batches*(b-1)
 	shards[[b]]$data <- full[shards[[b]]$indices]
 	shards[[b]]$closed <- dbeta(sup_th,1+sum(shards[[b]]$data==1),1+sum(shards[[b]]$data==0))
-	shards[[b]]$mcmc$theta <- infer_batch(shards[[b]]$data)$theta
+	shards[[b]]$mcmc$theta <- infer_batch(shards[[b]]$data,stan_model=stan_model_divided)$theta
 	#shards[[b]]$mcmc$theta <- infer_batch(shards[[b]]$data)$nds$theta
 	shards[[b]]$density <- density(shards[[b]]$mcmc$theta,from=0,to=1)
 }
